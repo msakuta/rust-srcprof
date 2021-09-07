@@ -26,18 +26,23 @@ struct Opt {
     ranking: u32,
     #[structopt(short, long)]
     extensions: Vec<String>,
+    #[structopt(short, long)]
+    ignore_dirs: Vec<String>,
 }
 
 fn main() -> Result<()> {
     let settings: Settings = Opt::from_args().into();
 
     eprintln!(
-        "Searching path: {:?} extensions: {:?}",
-        settings.root, settings.extensions
+        "Searching path: {:?} extensions: {:?} ignore_dirs: {:?}",
+        settings.root, settings.extensions, settings.ignore_dirs
     );
+    let mut walked = 0;
     let files = WalkDir::new(&settings.root)
         .into_iter()
+        .filter_entry(|e| !e.file_type().is_dir() || !settings.ignore_dirs.contains(e.file_name()))
         .filter_map(|entry| {
+            walked += 1;
             let entry = entry.ok()?;
             if !entry.file_type().is_file() {
                 return None;
@@ -50,7 +55,7 @@ fn main() -> Result<()> {
             Some(Ok(path))
         })
         .collect::<Result<Vec<_>>>()?;
-    eprintln!("Listing {} files...", files.len());
+    eprintln!("Listing {}/{} files...", files.len(), walked);
     process_file_list(&settings.root, &files, &settings);
     Ok(())
 }
@@ -62,6 +67,7 @@ struct Settings {
     enable_html: bool,
     ranking: u32,
     extensions: HashSet<OsString>,
+    ignore_dirs: HashSet<OsString>,
 }
 
 // It's a bit awkward to convert from Opt to Settings, but some settings are hard to write
@@ -72,6 +78,8 @@ impl From<Opt> for Settings {
             ".sh", ".js", ".tcl", ".pl", ".py", ".rb", ".c", ".cpp", ".h", ".rc", ".rci", ".dlg",
             ".pas", ".dpr", ".cs", ".rs",
         ];
+        let default_ignore_dirs = [".hg", ".svn", ".git", ".bzr", "node_modules", "target"]; // Probably we could ignore all directories beginning with a dot.
+
         Self {
             root: src
                 .root
@@ -86,6 +94,15 @@ impl From<Opt> for Settings {
                     .iter()
                     .map(|ext| ext[1..].into())
                     .chain(src.extensions.iter().map(|ext| ext[1..].into()))
+                    .collect()
+            },
+            ignore_dirs: if src.extensions.is_empty() {
+                default_ignore_dirs.iter().map(|ext| ext.into()).collect()
+            } else {
+                default_ignore_dirs
+                    .iter()
+                    .map(|ext| ext.into())
+                    .chain(src.extensions.iter().map(|ext| ext.into()))
                     .collect()
             },
         }
