@@ -76,6 +76,19 @@ fn main() -> Result<()> {
     eprintln!("Listing {}/{} files...", files.len(), walked);
     let (mut file_list, extstats) = process_file_list(&settings.root, &files, &settings);
 
+    if settings.enable_html {
+        println!(
+            r#"
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
+<head>
+<title>srcprof.py output</title>
+</head>
+<body>
+"#
+        )
+    }
+
     show_summary(&settings, &extstats);
 
     show_listing(&settings, &mut file_list);
@@ -359,7 +372,7 @@ fn show_distribution(settings: &Settings, file_list: &[FileEntry], hconv: impl F
         );
     }
 
-    let dist_width = 60;
+    let dist_width = if settings.enable_html { 300 } else { 60 };
 
     for i in 2..distrib.len() {
         let mut s = String::new();
@@ -392,9 +405,9 @@ fn show_distribution(settings: &Settings, file_list: &[FileEntry], hconv: impl F
                 s
             );
         }
+    }
 
-        if settings.enable_html {
-            println!("</table>");
-        }
+    if settings.enable_html {
+        println!("</table>");
     }
 }
