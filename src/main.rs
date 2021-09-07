@@ -17,16 +17,30 @@ use walkdir::WalkDir;
 
 #[derive(Debug, StructOpt)]
 struct Opt {
+    #[structopt(help = "Root directory to profile")]
     root: Option<PathBuf>,
-    #[structopt(short = "l", long)]
+    #[structopt(short = "l", long, help = "Disable listing of inspected files")]
     no_listing: bool,
-    #[structopt(short = "h", long = "html")]
+    #[structopt(
+        short = "h",
+        long = "html",
+        help = "Enable HTML output rather than plain text"
+    )]
     enable_html: bool,
-    #[structopt(short = "r", long, default_value = "10")]
+    #[structopt(
+        short = "r",
+        long,
+        default_value = "10",
+        help = "Set number of files to show in ranking of line count"
+    )]
     ranking: u32,
-    #[structopt(short, long)]
+    #[structopt(short, long, help = "Add an entry to list of extensions to search")]
     extensions: Vec<String>,
-    #[structopt(short, long)]
+    #[structopt(
+        short,
+        long,
+        help = "Add an entry to list of directory names to ignore"
+    )]
     ignore_dirs: Vec<String>,
 }
 
