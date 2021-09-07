@@ -36,6 +36,8 @@ struct Opt {
     ranking: u32,
     #[structopt(short = "s", long, help = "Show statistics summary")]
     no_summary: bool,
+    #[structopt(short = "d", long, help = "Show statistics summary")]
+    no_distrib: bool,
     #[structopt(short, long, help = "Add an entry to list of extensions to search")]
     extensions: Vec<String>,
     #[structopt(
@@ -78,6 +80,12 @@ fn main() -> Result<()> {
 
     show_listing(&settings, &mut file_list);
 
+    show_distribution(&settings, &file_list, |v| v);
+
+    if settings.enable_html {
+        println!("</body></html>");
+    }
+
     Ok(())
 }
 
@@ -88,6 +96,7 @@ struct Settings {
     enable_html: bool,
     ranking: u32,
     summary: bool,
+    enable_distrib: bool,
     extensions: HashSet<OsString>,
     ignore_dirs: HashSet<OsString>,
 }
@@ -110,6 +119,7 @@ impl From<Opt> for Settings {
             enable_html: src.enable_html,
             ranking: src.ranking,
             summary: !src.no_summary,
+            enable_distrib: !src.no_distrib,
             extensions: if src.extensions.is_empty() {
                 default_exts.iter().map(|ext| ext[1..].into()).collect()
             } else {
@@ -309,5 +319,82 @@ fn show_listing(settings: &Settings, filelist: &mut [FileEntry]) {
 
     if settings.enable_html {
         println!("</table><hr>");
+    }
+}
+
+/// `hconv` is a function to transform the bin count in the histogram.
+fn show_distribution(settings: &Settings, file_list: &[FileEntry], hconv: impl Fn(f64) -> f64) {
+    if !settings.enable_distrib {
+        return;
+    }
+    let mut cell = 1.;
+    let base = (2.0f64).sqrt();
+    let mut distrib = vec![0; 32];
+    for fe in file_list {
+        if fe.lines == 0 {
+            continue;
+        }
+        let find = (fe.lines as f64).log(base);
+        let ind = find.ceil().max(0.) as usize;
+        if ind < distrib.len() {
+            distrib[ind] += 1;
+        }
+    }
+
+    let maxdirs = hconv(distrib[1..].iter().copied().max().unwrap_or(0) as f64) as usize;
+
+    if settings.enable_html {
+        println!("<h1>Distribution</h1>");
+        println!(
+            r#"<table border="1" cellspacing="0" cellpadding="1">
+<tr><th>Line count range</th><th>Files</th><th>Graph</th></tr>"#
+        );
+    } else {
+        println!(
+            r#"
+--------------------------
+      Distribution
+--------------------------
+"#
+        );
+    }
+
+    let dist_width = 60;
+
+    for i in 2..distrib.len() {
+        let mut s = String::new();
+        if settings.enable_html {
+            println!(
+                r#"<tr><td align="right">{0:5}-{1:5}</td><td align="right">{2:3}</td>
+<td><div style="background-color:#{4:02x}007f;width:{3}px;">&nbsp;</div></td></tr>"#,
+                base.powf((i as f64 - 1.) * cell).floor(),
+                base.powf((i as f64) * cell).floor() - 1.,
+                distrib[i],
+                if distrib[i] != 0 {
+                    hconv(distrib[i] as f64) as usize * dist_width / maxdirs
+                } else {
+                    0
+                },
+                (i * 255 / distrib.len()) as u32
+            );
+        } else {
+            if 0 < maxdirs && i != 0 && distrib[i] != 0 {
+                for _ in 0..hconv(distrib[i] as f64) as usize * dist_width / maxdirs {
+                    s += "*"
+                }
+            }
+
+            println!(
+                "{0:5}-{1:5} {2:3}: {3}",
+                base.powf((i as f64 - 1.) * cell).floor(),
+                base.powf((i as f64) * cell).floor() - 1.,
+                distrib[i],
+                s
+            );
+        }
+
+        if settings.enable_html {
+            println!("</table>");
+        }
     }
 }
