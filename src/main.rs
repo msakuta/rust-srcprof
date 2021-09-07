@@ -3,6 +3,7 @@
 //! It lists up all files in a directory tree and sum up line counts
 //! for making statistics analysis.
 
+use dunce::canonicalize;
 use std::{
     cmp::Reverse,
     collections::{HashMap, HashSet},
@@ -125,9 +126,12 @@ impl From<Opt> for Settings {
         let default_ignore_dirs = [".hg", ".svn", ".git", ".bzr", "node_modules", "target"]; // Probably we could ignore all directories beginning with a dot.
 
         Self {
-            root: src
-                .root
-                .unwrap_or_else(|| PathBuf::from(env::current_dir().unwrap().to_str().unwrap())),
+            root: canonicalize(
+                src.root.unwrap_or_else(|| {
+                    PathBuf::from(env::current_dir().unwrap().to_str().unwrap())
+                }),
+            )
+            .expect("Canonicalized path"),
             listing: src.listing,
             enable_html: src.enable_html,
             ranking: src.ranking,
@@ -198,6 +202,12 @@ fn process_file_list(
     let mut filelist = vec![];
     let mut extstats = SrcStatsSet::new();
 
+    if settings.listing && settings.enable_html {
+        println!("<h1>File list in \"{}\"</h1>", root.to_string_lossy());
+        println!(r#"<table border="1" cellspacing="0" cellpadding="1">"#);
+        println!("<tr><th>No.</th><th>lines</th><th>size</th><th>name</th></tr>");
+    }
+
     for (i, f) in files.iter().enumerate() {
         let ext = if let Some(ext) = f.extension().or_else(|| f.file_name()) {
             ext.to_ascii_lowercase()
@@ -231,11 +241,19 @@ fn process_file_list(
         if settings.listing {
             if settings.enable_html {
                 println!(
-                    "<tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3:?}</td></tr>",
-                    i, linecount, filesize, filepath
+                    "<tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3}</td></tr>",
+                    i,
+                    linecount,
+                    filesize,
+                    filepath.to_string_lossy()
                 );
             } else {
-                println!("{0}\t{1:5}\t{2:?}", i + 1, linecount, filepath);
+                println!(
+                    "{0}\t{1:5}\t{2}",
+                    i + 1,
+                    linecount,
+                    filepath.to_string_lossy()
+                );
             }
         }
 
@@ -251,6 +269,11 @@ fn process_file_list(
         entry.files += 1;
         entry.size += filesize;
     }
+
+    if settings.listing && settings.enable_html {
+        println!("</table><hr>")
+    }
+
     (filelist, extstats)
 }
 
@@ -322,11 +345,14 @@ fn show_listing(settings: &Settings, filelist: &mut [FileEntry]) {
         }
         if settings.enable_html {
             println!(
-                "<tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3:?}</td></tr>",
-                i, fe.lines, fe.size, fe.name
+                "<tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3}</td></tr>",
+                i,
+                fe.lines,
+                fe.size,
+                fe.name.to_string_lossy()
             );
         } else {
-            println!("{}: {:?}", fe.lines, fe.name);
+            println!("{}: {}", fe.lines, fe.name.to_string_lossy());
         }
     }
 

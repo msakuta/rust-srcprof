@@ -18,11 +18,11 @@ It shows summary of lines for each file extension, top `n` largest files and dis
      Summary
 --------------------------
 
-"rc": files = 2, lines = 262, size = 11470
-"cpp": files = 174, lines = 98848, size = 2928898
-"h": files = 231, lines = 29704, size = 1125623
 "c": files = 40, lines = 8460, size = 254453
+"cpp": files = 174, lines = 98848, size = 2928898
 "sh": files = 2, lines = 14, size = 439
+"rc": files = 2, lines = 262, size = 11470
+"h": files = 231, lines = 29704, size = 1125623
 "py": files = 2, lines = 217, size = 6797
 total: files = 451, lines = 137505, size = 4327680
 
@@ -30,16 +30,16 @@ total: files = 451, lines = 137505, size = 4327680
       Top 10 files
 --------------------------
 
-6495: "..\\gltestplus\\..\\gltestplus\\clib\\include\\GL\\glext.h"
-3158: "..\\gltestplus\\..\\gltestplus\\mods\\vastspace\\island3.cpp"
-2771: "..\\gltestplus\\..\\gltestplus\\src\\gltestplus.cpp"
-2571: "..\\gltestplus\\..\\gltestplus\\mods\\surface\\DrawMap.cpp"
-2228: "..\\gltestplus\\..\\gltestplus\\src\\draw\\DrawTextureSphere.cpp"
-2142: "..\\gltestplus\\..\\gltestplus\\src\\glw\\glwindow.cpp"
-2077: "..\\gltestplus\\..\\gltestplus\\mods\\vastspace\\Soldier.cpp"
-1865: "..\\gltestplus\\..\\gltestplus\\src\\astrodraw.cpp"
-1846: "..\\gltestplus\\..\\gltestplus\\src\\CoordSys.cpp"
-1837: "..\\gltestplus\\..\\gltestplus\\src\\Sceptor.cpp"
+6495: D:\projects\gltestplus\clib\include\GL\glext.h
+3158: D:\projects\gltestplus\mods\vastspace\island3.cpp
+2771: D:\projects\gltestplus\src\gltestplus.cpp
+2571: D:\projects\gltestplus\mods\surface\DrawMap.cpp
+2228: D:\projects\gltestplus\src\draw\DrawTextureSphere.cpp
+2142: D:\projects\gltestplus\src\glw\glwindow.cpp
+2077: D:\projects\gltestplus\mods\vastspace\Soldier.cpp
+1865: D:\projects\gltestplus\src\astrodraw.cpp
+1846: D:\projects\gltestplus\src\CoordSys.cpp
+1837: D:\projects\gltestplus\src\Sceptor.cpp
 
 --------------------------
       Distribution
