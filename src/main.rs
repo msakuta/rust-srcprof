@@ -12,6 +12,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use structopt::StructOpt;
+use walkdir::WalkDir;
 
 #[derive(Debug, StructOpt)]
 struct Opt {
@@ -31,13 +32,13 @@ fn main() -> Result<()> {
         "Searching path: {:?} extensions: {:?}",
         settings.root, settings.extensions
     );
-    let files = std::fs::read_dir(&settings.root)?
+    let files = WalkDir::new(&settings.root).into_iter()
         .filter_map(|entry| {
             let entry = entry.ok()?;
-            if !entry.file_type().ok()?.is_file() {
+            if !entry.file_type().is_file() {
                 return None;
             }
-            let path = entry.path();
+            let path = entry.path().to_owned();
             let ext = path.extension().or_else(|| path.file_name())?;
             if !settings.extensions.contains(&ext.to_ascii_lowercase()) {
                 return None;
