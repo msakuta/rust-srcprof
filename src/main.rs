@@ -4,6 +4,7 @@
 //! for making statistics analysis.
 
 use std::{
+    cmp::Reverse,
     collections::HashSet,
     env,
     ffi::OsString,
@@ -21,6 +22,8 @@ struct Opt {
     no_listing: bool,
     #[structopt(short = "h", long = "html")]
     enable_html: bool,
+    #[structopt(short = "r", long, default_value = "10")]
+    ranking: u32,
     #[structopt(short, long)]
     extensions: Vec<String>,
 }
@@ -32,7 +35,8 @@ fn main() -> Result<()> {
         "Searching path: {:?} extensions: {:?}",
         settings.root, settings.extensions
     );
-    let files = WalkDir::new(&settings.root).into_iter()
+    let files = WalkDir::new(&settings.root)
+        .into_iter()
         .filter_map(|entry| {
             let entry = entry.ok()?;
             if !entry.file_type().is_file() {
@@ -56,6 +60,7 @@ struct Settings {
     root: PathBuf,
     listing: bool,
     enable_html: bool,
+    ranking: u32,
     extensions: HashSet<OsString>,
 }
 
@@ -73,6 +78,7 @@ impl From<Opt> for Settings {
                 .unwrap_or_else(|| PathBuf::from(env::current_dir().unwrap().to_str().unwrap())),
             listing: !src.no_listing,
             enable_html: src.enable_html,
+            ranking: src.ranking,
             extensions: if src.extensions.is_empty() {
                 default_exts.iter().map(|ext| ext[1..].into()).collect()
             } else {
@@ -86,7 +92,14 @@ impl From<Opt> for Settings {
     }
 }
 
+struct FileEntry {
+    name: PathBuf,
+    lines: usize,
+    size: u64,
+}
+
 fn process_file_list(root: &Path, files: &[PathBuf], settings: &Settings) {
+    let mut filelist = vec![];
     for (i, f) in files.iter().enumerate() {
         // let ext = if let Some(ext) = f.extension().or_else(|| f.file_name()) {
         //     ext.to_ascii_lowercase()
@@ -128,12 +141,12 @@ fn process_file_list(root: &Path, files: &[PathBuf], settings: &Settings) {
             }
         }
 
-        // fe = fileentry()
-        // fe.name = filepath
-        // fe.lines = linecount
-        // fe.size = filesize
-        // filelist.append((linecount, fe))
-        // fp.close()
+        let fe = FileEntry {
+            name: filepath,
+            lines: linecount,
+            size: filesize,
+        };
+        filelist.push(fe);
 
         // 	if !ext in extstats:
         // 		extstats[ext] = srcstats()
@@ -141,5 +154,41 @@ fn process_file_list(root: &Path, files: &[PathBuf], settings: &Settings) {
         // 	extstats[ext].files += 1
         // 	extstats[ext].size += filer.getsize(root, f)
         // return
+    }
+
+    if 0 < settings.ranking {
+        if settings.enable_html {
+            println!("<h1>Top {0} files</h1>", settings.ranking);
+            println!(r#"<table border="1" cellspacing="0" cellpadding="1">"#);
+            println!("<tr><th>No.</th><th>lines</th><th>size</th><th>name</th></tr>");
+        } else {
+            println!(
+                r#"
+--------------------------
+      Top {0} files
+--------------------------
+"#,
+                settings.ranking
+            );
+        }
+    }
+
+    filelist.sort_by_key(|fe| Reverse(fe.lines));
+    for (i, fe) in filelist.iter().enumerate().take(settings.ranking as usize) {
+        if fe.lines == 0 {
+            break;
+        }
+        if settings.enable_html {
+            println!(
+                "<tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3:?}</td></tr>",
+                i, fe.lines, fe.size, fe.name
+            );
+        } else {
+            println!("{}: {:?}", fe.lines, fe.name);
+        }
+    }
+
+    if settings.enable_html {
+        println!("</table><hr>");
     }
 }
