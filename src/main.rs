@@ -11,32 +11,27 @@ use std::{
     io::{BufRead, BufReader, Result},
     path::{Path, PathBuf},
 };
+use structopt::StructOpt;
+
+#[derive(Debug, StructOpt)]
+struct Opt {
+    root: Option<PathBuf>,
+    #[structopt(short = "l", long)]
+    no_listing: bool,
+    #[structopt(short = "h", long = "html")]
+    enable_html: bool,
+    #[structopt(short, long)]
+    extensions: Vec<String>,
+}
 
 fn main() -> Result<()> {
-    let settings = Settings {
-        listing: true,
-        enable_html: false,
-        extensions: [
-            ".sh", ".js", ".tcl", ".pl", ".py", ".rb", ".c", ".cpp", ".h", ".rc", ".rci", ".dlg",
-            ".pas", ".dpr", ".cs", ".rs",
-        ]
-        .iter()
-        .map(|ext| ext[1..].into())
-        .collect(),
-    };
-    let mut args = env::args();
-    args.next(); // Throw away executable
-    let root = if let Some(root) = args.next() {
-        PathBuf::from(root)
-    } else {
-        PathBuf::from(env::current_dir()?.to_str().unwrap())
-    };
+    let settings: Settings = Opt::from_args().into();
 
     eprintln!(
         "Searching path: {:?} extensions: {:?}",
-        root, settings.extensions
+        settings.root, settings.extensions
     );
-    let files = std::fs::read_dir(&root)?
+    let files = std::fs::read_dir(&settings.root)?
         .filter_map(|entry| {
             let entry = entry.ok()?;
             if !entry.file_type().ok()?.is_file() {
@@ -51,27 +46,56 @@ fn main() -> Result<()> {
         })
         .collect::<Result<Vec<_>>>()?;
     eprintln!("Listing {} files...", files.len());
-    process_file_list(&root, &files, &settings);
+    process_file_list(&settings.root, &files, &settings);
     Ok(())
 }
 
+#[derive(Debug)]
 struct Settings {
+    root: PathBuf,
     listing: bool,
     enable_html: bool,
     extensions: HashSet<OsString>,
 }
 
+// It's a bit awkward to convert from Opt to Settings, but some settings are hard to write
+// conversion code inside structopt annotations.
+impl From<Opt> for Settings {
+    fn from(src: Opt) -> Self {
+        let default_exts = [
+            ".sh", ".js", ".tcl", ".pl", ".py", ".rb", ".c", ".cpp", ".h", ".rc", ".rci", ".dlg",
+            ".pas", ".dpr", ".cs", ".rs",
+        ];
+        Self {
+            root: src
+                .root
+                .unwrap_or_else(|| PathBuf::from(env::current_dir().unwrap().to_str().unwrap())),
+            listing: !src.no_listing,
+            enable_html: src.enable_html,
+            extensions: if src.extensions.is_empty() {
+                default_exts.iter().map(|ext| ext[1..].into()).collect()
+            } else {
+                default_exts
+                    .iter()
+                    .map(|ext| ext[1..].into())
+                    .chain(src.extensions.iter().map(|ext| ext[1..].into()))
+                    .collect()
+            },
+        }
+    }
+}
+
 fn process_file_list(root: &Path, files: &[PathBuf], settings: &Settings) {
     for (i, f) in files.iter().enumerate() {
-        let ext = if let Some(ext) = f.extension().or_else(|| f.file_name()) {
-            ext.to_ascii_lowercase()
-        } else {
-            continue;
-        };
+        // let ext = if let Some(ext) = f.extension().or_else(|| f.file_name()) {
+        //     ext.to_ascii_lowercase()
+        // } else {
+        //     continue;
+        // };
 
-        if !settings.extensions.contains(&ext) {
-            continue;
-        }
+        // if !settings.extensions.contains(&ext) {
+        //     continue;
+        // }
 
         let filepath = root.join(f);
         let fp = match File::open(&filepath) {
