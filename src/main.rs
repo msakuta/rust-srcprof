@@ -19,8 +19,8 @@ use walkdir::WalkDir;
 struct Opt {
     #[structopt(help = "Root directory to profile")]
     root: Option<PathBuf>,
-    #[structopt(short = "l", long, help = "Disable listing of inspected files")]
-    no_listing: bool,
+    #[structopt(short = "l", long, help = "Enable listing of inspected files")]
+    listing: bool,
     #[structopt(
         short = "h",
         long = "html",
@@ -115,7 +115,7 @@ impl From<Opt> for Settings {
             root: src
                 .root
                 .unwrap_or_else(|| PathBuf::from(env::current_dir().unwrap().to_str().unwrap())),
-            listing: !src.no_listing,
+            listing: src.listing,
             enable_html: src.enable_html,
             ranking: src.ranking,
             summary: !src.no_summary,
@@ -129,13 +129,13 @@ impl From<Opt> for Settings {
                     .chain(src.extensions.iter().map(|ext| ext[1..].into()))
                     .collect()
             },
-            ignore_dirs: if src.extensions.is_empty() {
+            ignore_dirs: if src.ignore_dirs.is_empty() {
                 default_ignore_dirs.iter().map(|ext| ext.into()).collect()
             } else {
                 default_ignore_dirs
                     .iter()
                     .map(|ext| ext.into())
-                    .chain(src.extensions.iter().map(|ext| ext.into()))
+                    .chain(src.ignore_dirs.iter().map(|ext| ext.into()))
                     .collect()
             },
         }
@@ -327,7 +327,7 @@ fn show_distribution(settings: &Settings, file_list: &[FileEntry], hconv: impl F
     if !settings.enable_distrib {
         return;
     }
-    let mut cell = 1.;
+    let cell = 1.;
     let base = (2.0f64).sqrt();
     let mut distrib = vec![0; 32];
     for fe in file_list {
