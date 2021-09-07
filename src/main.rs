@@ -5,7 +5,7 @@
 
 use std::{
     cmp::Reverse,
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     env,
     ffi::OsString,
     fs::File,
@@ -34,6 +34,8 @@ struct Opt {
         help = "Set number of files to show in ranking of line count"
     )]
     ranking: u32,
+    #[structopt(short = "s", long, help = "Show statistics summary")]
+    no_summary: bool,
     #[structopt(short, long, help = "Add an entry to list of extensions to search")]
     extensions: Vec<String>,
     #[structopt(
@@ -70,7 +72,12 @@ fn main() -> Result<()> {
         })
         .collect::<Result<Vec<_>>>()?;
     eprintln!("Listing {}/{} files...", files.len(), walked);
-    process_file_list(&settings.root, &files, &settings);
+    let (mut file_list, extstats) = process_file_list(&settings.root, &files, &settings);
+
+    show_summary(&settings, &extstats);
+
+    show_listing(&settings, &mut file_list);
+
     Ok(())
 }
 
@@ -80,6 +87,7 @@ struct Settings {
     listing: bool,
     enable_html: bool,
     ranking: u32,
+    summary: bool,
     extensions: HashSet<OsString>,
     ignore_dirs: HashSet<OsString>,
 }
@@ -101,6 +109,7 @@ impl From<Opt> for Settings {
             listing: !src.no_listing,
             enable_html: src.enable_html,
             ranking: src.ranking,
+            summary: !src.no_summary,
             extensions: if src.extensions.is_empty() {
                 default_exts.iter().map(|ext| ext[1..].into()).collect()
             } else {
@@ -129,14 +138,49 @@ struct FileEntry {
     size: u64,
 }
 
-fn process_file_list(root: &Path, files: &[PathBuf], settings: &Settings) {
+#[derive(Default)]
+struct SrcStats {
+    files: usize,
+    lines: usize,
+    size: u64,
+}
+
+impl SrcStats {
+    fn tostring(&self) -> String {
+        format!(
+            "files = {}, lines = {}, size = {}",
+            self.files, self.lines, self.size
+        )
+    }
+
+    fn tohtml(&self) -> String {
+        format!(
+            "<td>{}</td><td>{}</td><td>{}</td>",
+            self.files, self.lines, self.size
+        )
+    }
+
+    fn htmlheader() -> &'static str {
+        "<th>file</th><th>lines</th><th>size</th>"
+    }
+}
+
+type SrcStatsSet = HashMap<OsString, SrcStats>;
+
+fn process_file_list(
+    root: &Path,
+    files: &[PathBuf],
+    settings: &Settings,
+) -> (Vec<FileEntry>, SrcStatsSet) {
     let mut filelist = vec![];
+    let mut extstats = SrcStatsSet::new();
+
     for (i, f) in files.iter().enumerate() {
-        // let ext = if let Some(ext) = f.extension().or_else(|| f.file_name()) {
-        //     ext.to_ascii_lowercase()
-        // } else {
-        //     continue;
-        // };
+        let ext = if let Some(ext) = f.extension().or_else(|| f.file_name()) {
+            ext.to_ascii_lowercase()
+        } else {
+            continue;
+        };
 
         // if !settings.extensions.contains(&ext) {
         //     continue;
@@ -179,29 +223,73 @@ fn process_file_list(root: &Path, files: &[PathBuf], settings: &Settings) {
         };
         filelist.push(fe);
 
-        // 	if !ext in extstats:
-        // 		extstats[ext] = srcstats()
-        // 	extstats[ext].lines += linecount
-        // 	extstats[ext].files += 1
-        // 	extstats[ext].size += filer.getsize(root, f)
-        // return
+        let entry = extstats.entry(ext).or_default();
+        entry.lines += linecount;
+        entry.files += 1;
+        entry.size += filesize;
+    }
+    (filelist, extstats)
+}
+
+fn show_summary(settings: &Settings, extstats: &SrcStatsSet) {
+    if !settings.summary {
+        return;
     }
 
-    if 0 < settings.ranking {
+    if settings.enable_html {
+        println!("<h1>Summary</h1>");
+        println!(r#"<table border="1" cellspacing="0" cellpadding="1">"#);
+        println!("<tr><th>extension</th>{}</tr>", SrcStats::htmlheader());
+    } else {
+        println!(
+            r#"
+--------------------------
+     Summary
+--------------------------
+"#
+        );
+    }
+
+    let mut extsum = SrcStats::default();
+    for (ext, l) in extstats {
         if settings.enable_html {
-            println!("<h1>Top {0} files</h1>", settings.ranking);
-            println!(r#"<table border="1" cellspacing="0" cellpadding="1">"#);
-            println!("<tr><th>No.</th><th>lines</th><th>size</th><th>name</th></tr>");
+            println!(r#"<tr><td>{:?}</td>{}</tr>"#, ext, l.tohtml());
         } else {
-            println!(
-                r#"
+            println!("{:?}: {}", ext, l.tostring());
+        }
+        extsum.files += l.files;
+        extsum.lines += l.lines;
+        extsum.size += l.size;
+    }
+
+    if settings.enable_html {
+        println!("<tr><td>total</td>{}</tr>", extsum.tohtml());
+    } else {
+        println!("total: {}", extsum.tostring());
+    }
+
+    if settings.enable_html {
+        println!("</table><hr>");
+    }
+}
+
+fn show_listing(settings: &Settings, filelist: &mut [FileEntry]) {
+    if 0 == settings.ranking {
+        return;
+    }
+    if settings.enable_html {
+        println!("<h1>Top {0} files</h1>", settings.ranking);
+        println!(r#"<table border="1" cellspacing="0" cellpadding="1">"#);
+        println!("<tr><th>No.</th><th>lines</th><th>size</th><th>name</th></tr>");
+    } else {
+        println!(
+            r#"
 --------------------------
       Top {0} files
 --------------------------
 "#,
-                settings.ranking
-            );
-        }
+            settings.ranking
+        );
     }
 
     filelist.sort_by_key(|fe| Reverse(fe.lines));
