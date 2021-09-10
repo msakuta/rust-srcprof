@@ -3,7 +3,9 @@
 //! It lists up all files in a directory tree and sum up line counts
 //! for making statistics analysis.
 
+use anyhow::Result;
 use dunce::canonicalize;
+use git2::{Repository, TreeWalkResult};
 use rayon::prelude::*;
 use std::{
     cmp::Reverse,
@@ -11,7 +13,7 @@ use std::{
     env,
     ffi::OsString,
     fs::File,
-    io::{BufRead, BufReader, Result},
+    io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
 use structopt::StructOpt;
@@ -40,6 +42,8 @@ struct Opt {
     no_summary: bool,
     #[structopt(short = "d", long, help = "Show statistics summary")]
     no_distrib: bool,
+    #[structopt(short = "g", long, help = "Load from git repository")]
+    use_git: bool,
     #[structopt(short, long, help = "Add an entry to list of extensions to search")]
     extensions: Vec<String>,
     #[structopt(
@@ -57,26 +61,11 @@ fn main() -> Result<()> {
         "Searching path: {:?} extensions: {:?} ignore_dirs: {:?}",
         settings.root, settings.extensions, settings.ignore_dirs
     );
-    let mut walked = 0;
-    let files = WalkDir::new(&settings.root)
-        .into_iter()
-        .filter_entry(|e| !e.file_type().is_dir() || !settings.ignore_dirs.contains(e.file_name()))
-        .filter_map(|entry| {
-            walked += 1;
-            let entry = entry.ok()?;
-            if !entry.file_type().is_file() {
-                return None;
-            }
-            let path = entry.path().to_owned();
-            let ext = path.extension().or_else(|| path.file_name())?;
-            if !settings.extensions.contains(&ext.to_ascii_lowercase()) {
-                return None;
-            }
-            Some(Ok(path))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    eprintln!("Listing {}/{} files...", files.len(), walked);
-    let (mut file_list, extstats) = process_file_list(&settings.root, &files, &settings);
+    let (mut file_list, extstats) = if settings.use_git {
+        process_files_git(&settings.root, &settings)?
+    } else {
+        process_files(&settings.root, &settings)?
+    };
 
     if settings.enable_html {
         println!(
@@ -112,6 +101,7 @@ struct Settings {
     ranking: u32,
     summary: bool,
     enable_distrib: bool,
+    use_git: bool,
     extensions: HashSet<OsString>,
     ignore_dirs: HashSet<OsString>,
 }
@@ -138,6 +128,7 @@ impl From<Opt> for Settings {
             ranking: src.ranking,
             summary: !src.no_summary,
             enable_distrib: !src.no_distrib,
+            use_git: src.use_git,
             extensions: if src.extensions.is_empty() {
                 default_exts.iter().map(|ext| ext[1..].into()).collect()
             } else {
@@ -195,6 +186,29 @@ impl SrcStats {
 
 type SrcStatsSet = HashMap<OsString, SrcStats>;
 
+fn process_files(root: &Path, settings: &Settings) -> Result<(Vec<FileEntry>, SrcStatsSet)> {
+    let mut walked = 0;
+    let files = WalkDir::new(&settings.root)
+        .into_iter()
+        .filter_entry(|e| !e.file_type().is_dir() || !settings.ignore_dirs.contains(e.file_name()))
+        .filter_map(|entry| {
+            walked += 1;
+            let entry = entry.ok()?;
+            if !entry.file_type().is_file() {
+                return None;
+            }
+            let path = entry.path().to_owned();
+            let ext = path.extension().or_else(|| path.file_name())?;
+            if !settings.extensions.contains(&ext.to_ascii_lowercase()) {
+                return None;
+            }
+            Some(Ok(path))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    eprintln!("Listing {}/{} files...", files.len(), walked);
+    Ok(process_file_list(root, &files, settings))
+}
+
 fn process_file_list(
     root: &Path,
     files: &[PathBuf],
@@ -218,8 +232,6 @@ fn process_file_list(
                 return None;
             }
         };
-        let reader = BufReader::new(fp).lines();
-        let linecount = reader.count();
 
         let filesize = match std::fs::metadata(&filepath) {
             Ok(meta) => meta.len(),
@@ -229,30 +241,7 @@ fn process_file_list(
             }
         };
 
-        if settings.listing {
-            if settings.enable_html {
-                println!(
-                    "<tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3}</td></tr>",
-                    i,
-                    linecount,
-                    filesize,
-                    filepath.to_string_lossy()
-                );
-            } else {
-                println!(
-                    "{0}\t{1:5}\t{2}",
-                    i + 1,
-                    linecount,
-                    filepath.to_string_lossy()
-                );
-            }
-        }
-
-        Some(FileEntry {
-            name: filepath,
-            lines: linecount,
-            size: filesize,
-        })
+        process_file(settings, fp, filepath, i, filesize)
     }));
 
     for fe in &filelist {
@@ -269,6 +258,110 @@ fn process_file_list(
     }
 
     (filelist, extstats)
+}
+
+fn process_file(
+    settings: &Settings,
+    fp: impl std::io::Read,
+    filepath: PathBuf,
+    i: usize,
+    filesize: u64,
+) -> Option<FileEntry> {
+    let reader = BufReader::new(fp).lines();
+    let linecount = reader.count();
+
+    if settings.listing {
+        if settings.enable_html {
+            println!(
+                "<tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3}</td></tr>",
+                i,
+                linecount,
+                filesize,
+                filepath.to_string_lossy()
+            );
+        } else {
+            println!(
+                "{0}\t{1:5}\t{2}",
+                i + 1,
+                linecount,
+                filepath.to_string_lossy()
+            );
+        }
+    }
+
+    Some(FileEntry {
+        name: filepath,
+        lines: linecount,
+        size: filesize,
+    })
+}
+
+fn process_files_git(_root: &Path, settings: &Settings) -> Result<(Vec<FileEntry>, SrcStatsSet)> {
+    let mut extstats = SrcStatsSet::new();
+    let mut walked = 0;
+    let repo = Repository::open(&settings.root)?;
+    let mut i = 0;
+    let mut files = vec![];
+    repo.head()?
+        .peel_to_tree()?
+        .walk(git2::TreeWalkMode::PostOrder, |_, entry| {
+            let name = if let Some(name) = entry.name() {
+                name
+            } else {
+                return TreeWalkResult::Ok;
+            };
+            if entry.kind() != Some(git2::ObjectType::Blob)
+                || settings.ignore_dirs.contains(&OsString::from(name))
+            {
+                return TreeWalkResult::Ok;
+            }
+            let obj = match entry.to_object(&repo) {
+                Ok(obj) => obj,
+                Err(e) => {
+                    eprintln!("couldn't get_object: {:?}", e);
+                    return TreeWalkResult::Ok;
+                }
+            };
+            let blob = if let Ok(obj) = obj.peel_to_blob() {
+                obj
+            } else {
+                return TreeWalkResult::Ok;
+            };
+            walked += 1;
+            if blob.is_binary() {
+                return TreeWalkResult::Ok;
+            }
+            let path: PathBuf = if let Some(name) = entry.name() {
+                name.into()
+            } else {
+                return TreeWalkResult::Ok;
+            };
+            let ext = if let Some(ext) = path.extension() {
+                ext.to_owned()
+            } else {
+                return TreeWalkResult::Ok;
+            };
+            if !settings.extensions.contains(&ext.to_ascii_lowercase()) {
+                return TreeWalkResult::Ok;
+            }
+
+            let filesize = blob.size() as u64;
+
+            if let Some(file_entry) = process_file(settings, blob.content(), path, i, filesize) {
+                let entry = extstats.entry(ext).or_default();
+                entry.lines += file_entry.lines;
+                entry.files += 1;
+                entry.size += file_entry.size;
+
+                files.push(file_entry);
+
+                i += 1;
+            }
+            TreeWalkResult::Ok
+        })?;
+    // .collect::<Result<Vec<_>>>()?;
+    eprintln!("Listing {}/{} files...", files.len(), walked);
+    Ok((files, extstats))
 }
 
 fn show_summary(settings: &Settings, extstats: &SrcStatsSet) {
