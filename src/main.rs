@@ -4,6 +4,7 @@
 //! for making statistics analysis.
 
 use dunce::canonicalize;
+use rayon::prelude::*;
 use std::{
     cmp::Reverse,
     collections::{HashMap, HashSet},
@@ -208,23 +209,13 @@ fn process_file_list(
         println!("<tr><th>No.</th><th>lines</th><th>size</th><th>name</th></tr>");
     }
 
-    for (i, f) in files.iter().enumerate() {
-        let ext = if let Some(ext) = f.extension().or_else(|| f.file_name()) {
-            ext.to_ascii_lowercase()
-        } else {
-            continue;
-        };
-
-        // if !settings.extensions.contains(&ext) {
-        //     continue;
-        // }
-
+    filelist.par_extend(files.par_iter().enumerate().filter_map(|(i, f)| {
         let filepath = root.join(f);
         let fp = match File::open(&filepath) {
             Ok(fp) => fp,
             Err(e) => {
                 eprintln!("Failed to open {:?}: {:?}", filepath, e);
-                continue;
+                return None;
             }
         };
         let reader = BufReader::new(fp).lines();
@@ -234,7 +225,7 @@ fn process_file_list(
             Ok(meta) => meta.len(),
             Err(e) => {
                 eprintln!("Failed to get metadata for {:?}: {:?}", filepath, e);
-                continue;
+                return None;
             }
         };
 
@@ -257,17 +248,20 @@ fn process_file_list(
             }
         }
 
-        let fe = FileEntry {
+        Some(FileEntry {
             name: filepath,
             lines: linecount,
             size: filesize,
-        };
-        filelist.push(fe);
+        })
+    }));
+
+    for fe in &filelist {
+        let ext = fe.name.extension().unwrap().to_ascii_lowercase();
 
         let entry = extstats.entry(ext).or_default();
-        entry.lines += linecount;
+        entry.lines += fe.lines;
         entry.files += 1;
-        entry.size += filesize;
+        entry.size += fe.size;
     }
 
     if settings.listing && settings.enable_html {
