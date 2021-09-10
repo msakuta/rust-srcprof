@@ -1,6 +1,6 @@
 # rust-srcprof
 
-This is reimplementation of source code line count profile I wrote long time ago in Python.
+This is reimplementation of source code line count profiler I wrote long time ago in Python.
 
 As it is implemented in Rust, it should be much faster than Python version, especially with
 large repository.
@@ -79,10 +79,15 @@ total: files = 451, lines = 137505, size = 4327680
 
 ## Prerequisites
 
-* Cargo 1.56.0
+* Cargo 1.56.0-nightly (requires Rust 2021 edition)
+
+You can activate Rust 2021 edition by
+
+    rustup install nightly
+    rustup override set nightly
 
 ## How to run
 
-   cargo run [options] <path>
+    cargo run [options] <path>
 
 Full list of options can be obtained by `cargo run -- --help`.
