@@ -305,57 +305,49 @@ fn process_files_git(_root: &Path, settings: &Settings) -> Result<(Vec<FileEntry
     repo.head()?
         .peel_to_tree()?
         .walk(git2::TreeWalkMode::PostOrder, |_, entry| {
-            let name = if let Some(name) = entry.name() {
-                name
-            } else {
-                return TreeWalkResult::Ok;
-            };
-            if entry.kind() != Some(git2::ObjectType::Blob)
-                || settings.ignore_dirs.contains(&OsString::from(name))
-            {
-                return TreeWalkResult::Ok;
-            }
-            let obj = match entry.to_object(&repo) {
-                Ok(obj) => obj,
-                Err(e) => {
-                    eprintln!("couldn't get_object: {:?}", e);
-                    return TreeWalkResult::Ok;
+            match (|| {
+                let name = entry.name()?;
+                if entry.kind() != Some(git2::ObjectType::Blob)
+                    || settings.ignore_dirs.contains(&OsString::from(name))
+                {
+                    return None;
                 }
-            };
-            let blob = if let Ok(obj) = obj.peel_to_blob() {
-                obj
-            } else {
-                return TreeWalkResult::Ok;
-            };
-            walked += 1;
-            if blob.is_binary() {
-                return TreeWalkResult::Ok;
-            }
-            let path: PathBuf = if let Some(name) = entry.name() {
-                name.into()
-            } else {
-                return TreeWalkResult::Ok;
-            };
-            let ext = if let Some(ext) = path.extension() {
-                ext.to_owned()
-            } else {
-                return TreeWalkResult::Ok;
-            };
-            if !settings.extensions.contains(&ext.to_ascii_lowercase()) {
-                return TreeWalkResult::Ok;
-            }
+                let obj = match entry.to_object(&repo) {
+                    Ok(obj) => obj,
+                    Err(e) => {
+                        eprintln!("couldn't get_object: {:?}", e);
+                        return None;
+                    }
+                };
+                let blob = obj.peel_to_blob().ok()?;
+                walked += 1;
+                if blob.is_binary() {
+                    return None;
+                }
+                let path: PathBuf = entry.name()?.into();
+                let ext = path.extension()?.to_owned();
+                if !settings.extensions.contains(&ext.to_ascii_lowercase()) {
+                    return None;
+                }
 
-            let filesize = blob.size() as u64;
+                let filesize = blob.size() as u64;
 
-            if let Some(file_entry) = process_file(settings, blob.content(), path, i, filesize) {
-                let entry = extstats.entry(ext).or_default();
-                entry.lines += file_entry.lines;
-                entry.files += 1;
-                entry.size += file_entry.size;
+                Some((
+                    ext,
+                    process_file(settings, blob.content(), path, i, filesize)?,
+                ))
+            })() {
+                Some((ext, file_entry)) => {
+                    let entry = extstats.entry(ext).or_default();
+                    entry.lines += file_entry.lines;
+                    entry.files += 1;
+                    entry.size += file_entry.size;
 
-                files.push(file_entry);
+                    files.push(file_entry);
 
-                i += 1;
+                    i += 1;
+                }
+                _ => (),
             }
             TreeWalkResult::Ok
         })?;
