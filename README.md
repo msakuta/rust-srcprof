@@ -91,3 +91,16 @@ You can activate Rust 2021 edition by
     cargo run [options] <path>
 
 Full list of options can be obtained by `cargo run -- --help`.
+
+## Git repository support
+
+Using [git2](https://github.com/rust-lang/git2-rs) crate, we can easily get statistics from git repository without checking out.
+
+It may not be terribly useful, but sometimes you have repositories that you can't checkout. For example, [Linux](https://github.com/torvalds/linux) repository can't be checked out on Windows, because there are file names that will be the same in case-insensitive filesystem.
+
+The git repository support is off by default, because it requires a C compiler and development libraries in some platforms.
+You can enable this feature by
+
+    cargo run --features git -- -g [-b branch] [options] <path>
+
+The `-b` is an optional argument to specify the branch name (or reference name in Git) to gather statistics.
