@@ -44,6 +44,8 @@ struct Opt {
     no_distrib: bool,
     #[structopt(short = "g", long, help = "Load from git repository")]
     use_git: bool,
+    #[structopt(short = "b", long, help = "Git branch name to search line numbers. If omitted, HEAD is used.")]
+    branch: Option<String>,
     #[structopt(short, long, help = "Add an entry to list of extensions to search")]
     extensions: Vec<String>,
     #[structopt(
@@ -102,6 +104,7 @@ struct Settings {
     summary: bool,
     enable_distrib: bool,
     use_git: bool,
+    branch: Option<String>,
     extensions: HashSet<OsString>,
     ignore_dirs: HashSet<OsString>,
 }
@@ -129,6 +132,7 @@ impl From<Opt> for Settings {
             summary: !src.no_summary,
             enable_distrib: !src.no_distrib,
             use_git: src.use_git,
+            branch: src.branch,
             extensions: if src.extensions.is_empty() {
                 default_exts.iter().map(|ext| ext[1..].into()).collect()
             } else {
@@ -302,7 +306,12 @@ fn process_files_git(_root: &Path, settings: &Settings) -> Result<(Vec<FileEntry
     let repo = Repository::open(&settings.root)?;
     let mut i = 0;
     let mut files = vec![];
-    repo.head()?
+    let reference = if let Some(ref branch) = settings.branch {
+        repo.resolve_reference_from_short_name(&branch)?
+    } else {
+        repo.head()?
+    };
+    reference
         .peel_to_tree()?
         .walk(git2::TreeWalkMode::PostOrder, |_, entry| {
             match (|| {
@@ -351,7 +360,6 @@ fn process_files_git(_root: &Path, settings: &Settings) -> Result<(Vec<FileEntry
             }
             TreeWalkResult::Ok
         })?;
-    // .collect::<Result<Vec<_>>>()?;
     eprintln!("Listing {}/{} files...", files.len(), walked);
     Ok((files, extstats))
 }
