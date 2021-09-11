@@ -5,6 +5,7 @@
 
 use anyhow::Result;
 use dunce::canonicalize;
+#[cfg(feature = "git2")]
 use git2::{Repository, TreeWalkResult};
 use rayon::prelude::*;
 use std::{
@@ -42,9 +43,15 @@ struct Opt {
     no_summary: bool,
     #[structopt(short = "d", long, help = "Show statistics summary")]
     no_distrib: bool,
+    #[cfg(feature = "git2")]
     #[structopt(short = "g", long, help = "Load from git repository")]
     use_git: bool,
-    #[structopt(short = "b", long, help = "Git branch name to search line numbers. If omitted, HEAD is used.")]
+    #[cfg(feature = "git2")]
+    #[structopt(
+        short = "b",
+        long,
+        help = "Git branch name to search line numbers. If omitted, HEAD is used."
+    )]
     branch: Option<String>,
     #[structopt(short, long, help = "Add an entry to list of extensions to search")]
     extensions: Vec<String>,
@@ -63,11 +70,15 @@ fn main() -> Result<()> {
         "Searching path: {:?} extensions: {:?} ignore_dirs: {:?}",
         settings.root, settings.extensions, settings.ignore_dirs
     );
+
+    #[cfg(feature = "git2")]
     let (mut file_list, extstats) = if settings.use_git {
         process_files_git(&settings.root, &settings)?
     } else {
         process_files(&settings.root, &settings)?
     };
+    #[cfg(not(feature = "git2"))]
+    let (mut file_list, extstats) = process_files(&settings.root, &settings)?;
 
     if settings.enable_html {
         println!(
@@ -103,7 +114,9 @@ struct Settings {
     ranking: u32,
     summary: bool,
     enable_distrib: bool,
+    #[cfg(feature = "git2")]
     use_git: bool,
+    #[cfg(feature = "git2")]
     branch: Option<String>,
     extensions: HashSet<OsString>,
     ignore_dirs: HashSet<OsString>,
@@ -131,7 +144,9 @@ impl From<Opt> for Settings {
             ranking: src.ranking,
             summary: !src.no_summary,
             enable_distrib: !src.no_distrib,
+            #[cfg(feature = "git2")]
             use_git: src.use_git,
+            #[cfg(feature = "git2")]
             branch: src.branch,
             extensions: if src.extensions.is_empty() {
                 default_exts.iter().map(|ext| ext[1..].into()).collect()
@@ -300,6 +315,7 @@ fn process_file(
     })
 }
 
+#[cfg(feature = "git2")]
 fn process_files_git(_root: &Path, settings: &Settings) -> Result<(Vec<FileEntry>, SrcStatsSet)> {
     let mut extstats = SrcStatsSet::new();
     let mut walked = 0;
