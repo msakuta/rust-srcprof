@@ -8,10 +8,10 @@ pub struct IgnoreDirs {
 
 impl IgnoreDirs {
     pub fn query_from(root_dir: &str) -> Vec<String> {
-        let ignore_files_path = IgnoreDirs::get_all_ignore_files(root_dir);
+        let ignore_files_path = IgnoreDirs::get_all_ignore_files_from(root_dir);
         
         ignore_files_path.iter()
-            .map(|f| IgnoreDirs::get_all_ignore_paths_from_ignore_file(f))
+            .map(|f| IgnoreDirs::get_all_ignore_paths_from(f))
             .flatten()
             .collect::<Vec<String>>()
     }
@@ -25,7 +25,7 @@ impl IgnoreDirs {
         RE.is_match(input.to_str().unwrap())
     }
 
-    fn get_all_ignore_files(dir: &str) -> Vec<String> {
+    fn get_all_ignore_files_from(dir: &str) -> Vec<String> {
         std::fs::read_dir(dir)
             .unwrap()
             .into_iter()
@@ -44,7 +44,7 @@ impl IgnoreDirs {
         RE.is_match(input).not()
     }
 
-    fn get_all_ignore_paths_from_ignore_file(input: &str) -> Vec<String> {        
+    fn get_all_ignore_paths_from(input: &str) -> Vec<String> {        
         let file = std::fs::File::open(input)
             .expect(format!("failed to open file ({})", input).as_str());
         
