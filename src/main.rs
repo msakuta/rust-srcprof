@@ -16,6 +16,10 @@ use std::{
 use structopt::StructOpt;
 use walkdir::WalkDir;
 
+use crate::ignore_dirs::IgnoreDirs;
+
+mod ignore_dirs;
+
 #[derive(Debug, StructOpt)]
 struct Opt {
     #[structopt(help = "Root directory to profile")]
@@ -57,6 +61,7 @@ fn main() -> Result<()> {
         settings.root, settings.extensions, settings.ignore_dirs
     );
     let mut walked = 0;
+    
     let files = WalkDir::new(&settings.root)
         .into_iter()
         .filter_entry(|e| !e.file_type().is_dir() || !settings.ignore_dirs.contains(e.file_name()))
@@ -123,15 +128,23 @@ impl From<Opt> for Settings {
             ".sh", ".js", ".tcl", ".pl", ".py", ".rb", ".c", ".cpp", ".h", ".rc", ".rci", ".dlg",
             ".pas", ".dpr", ".cs", ".rs",
         ];
+        
+        let root_dir = canonicalize(
+            src.root.unwrap_or_else(|| {
+                PathBuf::from(env::current_dir().unwrap().to_str().unwrap())
+            })
+        ).expect("Canonicalized path");
+        
         let default_ignore_dirs = [".hg", ".svn", ".git", ".bzr", "node_modules", "target"]; // Probably we could ignore all directories beginning with a dot.
+        let ignore_dirs_from_root_dir = IgnoreDirs::query_from(root_dir.to_str().unwrap());
+        let all_ignore_dirs = [
+            default_ignore_dirs.to_vec(), 
+            ignore_dirs_from_root_dir.iter().map(|s| s.as_ref()).collect(),
+            src.ignore_dirs.iter().map(|s| s.as_ref()).collect()
+        ].concat();
 
         Self {
-            root: canonicalize(
-                src.root.unwrap_or_else(|| {
-                    PathBuf::from(env::current_dir().unwrap().to_str().unwrap())
-                }),
-            )
-            .expect("Canonicalized path"),
+            root: root_dir,
             listing: src.listing,
             enable_html: src.enable_html,
             ranking: src.ranking,
@@ -146,15 +159,7 @@ impl From<Opt> for Settings {
                     .chain(src.extensions.iter().map(|ext| ext[1..].into()))
                     .collect()
             },
-            ignore_dirs: if src.ignore_dirs.is_empty() {
-                default_ignore_dirs.iter().map(|ext| ext.into()).collect()
-            } else {
-                default_ignore_dirs
-                    .iter()
-                    .map(|ext| ext.into())
-                    .chain(src.ignore_dirs.iter().map(|ext| ext.into()))
-                    .collect()
-            },
+            ignore_dirs: all_ignore_dirs.iter().map(|ext| ext.into()).collect()
         }
     }
 }
