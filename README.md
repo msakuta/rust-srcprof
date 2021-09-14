@@ -79,12 +79,7 @@ total: files = 451, lines = 137505, size = 4327680
 
 ## Prerequisites
 
-* Cargo 1.56.0-nightly (requires Rust 2021 edition)
-
-You can activate Rust 2021 edition by
-
-    rustup install nightly
-    rustup override set nightly
+* Cargo 1.55.0
 
 ## How to run
 
