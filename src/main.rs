@@ -61,6 +61,8 @@ struct Opt {
         help = "Add an entry to list of directory names to ignore"
     )]
     ignore_dirs: Vec<String>,
+    #[structopt(short = "H", long, help = "Show line counts and file sizes in human-readable format (e.g. 101.2K instead of 101214)")]
+    human_readable: bool,
 }
 
 fn main() -> Result<()> {
@@ -120,6 +122,7 @@ struct Settings {
     branch: Option<String>,
     extensions: HashSet<OsString>,
     ignore_dirs: HashSet<OsString>,
+    human_readable: bool,
 }
 
 // It's a bit awkward to convert from Opt to Settings, but some settings are hard to write
@@ -166,6 +169,7 @@ impl From<Opt> for Settings {
                     .chain(src.ignore_dirs.iter().map(|ext| ext.into()))
                     .collect()
             },
+            human_readable: src.human_readable,
         }
     }
 }
@@ -176,6 +180,18 @@ struct FileEntry {
     size: u64,
 }
 
+fn format_human_readable(size: u64, humread: bool) -> String {
+    if !humread || size < 2u64.pow(10) {
+        format!("{size}")
+    } else if size < 2u64.pow(20) {
+        format!("{:.1}K", size as f64 / 2u64.pow(10) as f64)
+    } else if size < 2u64.pow(30) {
+        format!("{:.1}M", size as f64 / 2u64.pow(20) as f64)
+    } else {
+        format!("{:.1}G", size as f64 / 2u64.pow(20) as f64)
+    }
+}
+
 #[derive(Default)]
 struct SrcStats {
     files: usize,
@@ -184,17 +200,21 @@ struct SrcStats {
 }
 
 impl SrcStats {
-    fn tostring(&self) -> String {
+    fn tostring(&self, humread: bool) -> String {
         format!(
             "files = {}, lines = {}, size = {}",
-            self.files, self.lines, self.size
+            self.files,
+            format_human_readable(self.lines as u64, humread),
+            format_human_readable(self.size, humread)
         )
     }
 
-    fn tohtml(&self) -> String {
+    fn tohtml(&self, humread: bool) -> String {
         format!(
             "<td>{}</td><td>{}</td><td>{}</td>",
-            self.files, self.lines, self.size
+            self.files,
+            format_human_readable(self.lines as u64, humread),
+            format_human_readable(self.size, humread)
         )
     }
 
@@ -402,9 +422,13 @@ fn show_summary(settings: &Settings, extstats: &SrcStatsSet) {
     let mut extsum = SrcStats::default();
     for (ext, l) in extstats {
         if settings.enable_html {
-            println!(r#"<tr><td>{:?}</td>{}</tr>"#, ext, l.tohtml());
+            println!(
+                r#"<tr><td>{:?}</td>{}</tr>"#,
+                ext,
+                l.tohtml(settings.human_readable)
+            );
         } else {
-            println!("{:?}: {}", ext, l.tostring());
+            println!("{:?}: {}", ext, l.tostring(settings.human_readable));
         }
         extsum.files += l.files;
         extsum.lines += l.lines;
@@ -412,9 +436,12 @@ fn show_summary(settings: &Settings, extstats: &SrcStatsSet) {
     }
 
     if settings.enable_html {
-        println!("<tr><td>total</td>{}</tr>", extsum.tohtml());
+        println!(
+            "<tr><td>total</td>{}</tr>",
+            extsum.tohtml(settings.human_readable)
+        );
     } else {
-        println!("total: {}", extsum.tostring());
+        println!("total: {}", extsum.tostring(settings.human_readable));
     }
 
     if settings.enable_html {
