@@ -498,7 +498,7 @@ fn show_distribution(settings: &Settings, file_list: &[FileEntry], hconv: impl F
     }
     let cell = 1.;
     let base = (2.0f64).sqrt();
-    let mut distrib = vec![0; 32];
+    let mut distrib = [0; 32];
     for fe in file_list {
         if fe.lines == 0 {
             continue;
