@@ -14,7 +14,7 @@ use std::{
     env,
     ffi::OsString,
     fs::File,
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
 };
 use structopt::StructOpt;
@@ -61,8 +61,18 @@ struct Opt {
         help = "Add an entry to list of directory names to ignore"
     )]
     ignore_dirs: Vec<String>,
-    #[structopt(short = "H", long, help = "Show line counts and file sizes in human-readable format (e.g. 101.2K instead of 101214)")]
+    #[structopt(
+        short = "H",
+        long,
+        help = "Show line counts and file sizes in human-readable format (e.g. 101.2K instead of 101214)"
+    )]
     human_readable: bool,
+    #[structopt(
+        short = "u",
+        long,
+        help = "Count file size in utf-8 characters instead of bytes"
+    )]
+    utf8: bool,
 }
 
 fn main() -> Result<()> {
@@ -123,6 +133,7 @@ struct Settings {
     extensions: HashSet<OsString>,
     ignore_dirs: HashSet<OsString>,
     human_readable: bool,
+    utf8: bool,
 }
 
 // It's a bit awkward to convert from Opt to Settings, but some settings are hard to write
@@ -170,6 +181,7 @@ impl From<Opt> for Settings {
                     .collect()
             },
             human_readable: src.human_readable,
+            utf8: src.utf8,
         }
     }
 }
@@ -272,11 +284,32 @@ fn process_file_list(
             }
         };
 
-        let filesize = match std::fs::metadata(&filepath) {
-            Ok(meta) => meta.len(),
-            Err(e) => {
-                eprintln!("Failed to get metadata for {:?}: {:?}", filepath, e);
-                return None;
+        let filesize = if settings.utf8 {
+            match std::fs::File::open(&filepath) {
+                Ok(f) => {
+                    let mut s = String::new();
+                    let mut reader = std::io::BufReader::new(f);
+                    if let Err(e) = reader.read_to_string(&mut s) {
+                        eprintln!(
+                            "Failed to read contents as a string from {:?}: {:?}",
+                            filepath, e
+                        );
+                        return None;
+                    }
+                    s.chars().count() as u64
+                }
+                Err(e) => {
+                    eprintln!("Failed to open file {:?}: {:?}", filepath, e);
+                    return None;
+                }
+            }
+        } else {
+            match std::fs::metadata(&filepath) {
+                Ok(meta) => meta.len(),
+                Err(e) => {
+                    eprintln!("Failed to get metadata for {:?}: {:?}", filepath, e);
+                    return None;
+                }
             }
         };
 
