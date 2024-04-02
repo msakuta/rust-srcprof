@@ -10,7 +10,7 @@ use git2::{Repository, TreeWalkResult};
 use rayon::prelude::*;
 use std::{
     cmp::Reverse,
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     env,
     ffi::OsString,
     fs::File,
@@ -235,7 +235,7 @@ impl SrcStats {
     }
 }
 
-type SrcStatsSet = HashMap<OsString, SrcStats>;
+type SrcStatsSet = BTreeMap<OsString, SrcStats>;
 
 fn process_files(root: &Path, settings: &Settings) -> Result<(Vec<FileEntry>, SrcStatsSet)> {
     let mut walked = 0;
