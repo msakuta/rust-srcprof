@@ -2,6 +2,10 @@
 name = "rust-srcprof"
 version = "0.1.0"
 edition = "2018"
+readme = "README.md"
+description = "Source profiler"
+authors = ["Masahiro Sakuta"]
+license = "MIT"
 
 [features]
 git = [ "git2" ]
