@@ -7,6 +7,7 @@ use anyhow::Result;
 use dunce::canonicalize;
 #[cfg(feature = "git2")]
 use git2::{Repository, TreeWalkResult};
+use globset::{Glob, GlobSet, GlobSetBuilder};
 use rayon::prelude::*;
 use std::{
     cmp::Reverse,
@@ -18,7 +19,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use structopt::StructOpt;
-use walkdir::WalkDir;
+use walkdir::{DirEntry, WalkDir};
 
 #[derive(Debug, StructOpt)]
 struct Opt {
@@ -73,6 +74,12 @@ struct Opt {
         help = "Count file size in utf-8 characters instead of bytes"
     )]
     utf8: bool,
+    #[structopt(
+        short = "g",
+        long,
+        help = "Do not use .gitignore file to ignore files. By default, .gitignore is used to filter files (usually built artifacts), if it exists."
+    )]
+    ignore_gitignore: bool,
 }
 
 fn main() -> Result<()> {
@@ -134,6 +141,7 @@ struct Settings {
     ignore_dirs: HashSet<OsString>,
     human_readable: bool,
     utf8: bool,
+    gitignore: Option<GlobSet>,
 }
 
 // It's a bit awkward to convert from Opt to Settings, but some settings are hard to write
@@ -146,13 +154,23 @@ impl From<Opt> for Settings {
         ];
         let default_ignore_dirs = [".hg", ".svn", ".git", ".bzr", "node_modules", "target"]; // Probably we could ignore all directories beginning with a dot.
 
+        let root = canonicalize(
+            src.root
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(env::current_dir().unwrap().to_str().unwrap())),
+        )
+        .expect("Canonicalized path");
+
+        let gitignore = match globset_from_gitignore(&src, &root) {
+            Ok(globset) => globset,
+            Err(e) => {
+                eprintln!("Failed to load .gitignore file!: {e}");
+                None
+            }
+        };
+
         Self {
-            root: canonicalize(
-                src.root.unwrap_or_else(|| {
-                    PathBuf::from(env::current_dir().unwrap().to_str().unwrap())
-                }),
-            )
-            .expect("Canonicalized path"),
+            root,
             listing: src.listing,
             enable_html: src.enable_html,
             ranking: src.ranking,
@@ -182,10 +200,26 @@ impl From<Opt> for Settings {
             },
             human_readable: src.human_readable,
             utf8: src.utf8,
+            gitignore,
         }
     }
 }
 
+fn globset_from_gitignore(src: &Opt, path: &Path) -> anyhow::Result<Option<GlobSet>> {
+    if src.ignore_gitignore {
+        return Ok(None);
+    }
+    let Ok(file) = std::fs::read_to_string(path.join(".gitignore")) else {
+        return Ok(None);
+    };
+    println!("found .gitignore");
+    let mut builder = GlobSetBuilder::new();
+    for s in file.split(&['\n', '\r']) {
+        let glob = Glob::new(s)?;
+        builder.add(glob);
+    }
+    Ok(Some(builder.build()?))
+}
 struct FileEntry {
     name: PathBuf,
     lines: usize,
@@ -237,11 +271,22 @@ impl SrcStats {
 
 type SrcStatsSet = BTreeMap<OsString, SrcStats>;
 
+fn file_filter(settings: &Settings, entry: &DirEntry) -> bool {
+    if settings
+        .gitignore
+        .as_ref()
+        .is_some_and(|gs| gs.is_match(entry.file_name()))
+    {
+        return false;
+    }
+    !entry.file_type().is_dir() || !settings.ignore_dirs.contains(entry.file_name())
+}
+
 fn process_files(root: &Path, settings: &Settings) -> Result<(Vec<FileEntry>, SrcStatsSet)> {
     let mut walked = 0;
     let files = WalkDir::new(&settings.root)
         .into_iter()
-        .filter_entry(|e| !e.file_type().is_dir() || !settings.ignore_dirs.contains(e.file_name()))
+        .filter_entry(|e| file_filter(settings, e))
         .filter_map(|entry| {
             walked += 1;
             let entry = entry.ok()?;
