@@ -362,7 +362,10 @@ fn process_file_list(
     }));
 
     for fe in &filelist {
-        let ext = fe.name.extension().unwrap().to_ascii_lowercase();
+        let Some(ext) = fe.name.extension() else {
+            continue;
+        };
+        let ext = ext.to_ascii_lowercase();
 
         let entry = extstats.entry(ext).or_default();
         entry.lines += fe.lines;
