@@ -286,7 +286,7 @@ fn process_files(root: &Path, settings: &Settings) -> Result<(Vec<FileEntry>, Sr
     let mut walked = 0;
     let files = WalkDir::new(&settings.root)
         .into_iter()
-        .filter_entry(|e| file_filter(settings, e))
+        .filter_entry(|e| settings.root == e.path() || file_filter(settings, e))
         .filter_map(|entry| {
             walked += 1;
             let entry = entry.ok()?;
